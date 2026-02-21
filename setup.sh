@@ -291,6 +291,25 @@ WRAPPER
     fi
   fi
 
+  # HACK: gastown v0.7.0 polecat session naming bug.
+  # SpawnPolecatForSling doesn't call session.InitRegistry(), so PrefixFor()
+  # returns "gt" (default) for all rigs. Sessions get named gt-<name> instead
+  # of <rig-prefix>-<name>. The witness can't find the session and nukes the
+  # worktree while the polecat is still running.
+  # Remove this once gastown initializes the prefix registry in sling/spawn.
+  if [[ -d "$GT_MOD_DIR" ]]; then
+    SPAWN_FILE="$GT_MOD_DIR/internal/cmd/polecat_spawn.go"
+    if [[ -f "$SPAWN_FILE" ]] && ! grep -q 'session.InitRegistry' "$SPAWN_FILE" 2>/dev/null; then
+      echo ">>> Patching gastown v0.7.0 polecat session naming (HACK)"
+      chmod -R u+w "$GT_MOD_DIR"
+      # Add session import
+      sed -i '/"github.com\/steveyegge\/gastown\/internal\/tmux"/i\\t"github.com/steveyegge/gastown/internal/session"' "$SPAWN_FILE"
+      # Add InitRegistry call after townRoot is resolved
+      sed -i '/\/\/ Load rig config/i\\t// HACK: gastown v0.7.0 session naming bug.\n\t// Without InitRegistry, PrefixFor() returns "gt" for all rigs,\n\t// causing sessions to be named gt-<name> instead of <prefix>-<name>.\n\t// The witness then can'\''t find the session and nukes the worktree.\n\t_ = session.InitRegistry(townRoot)\n' "$SPAWN_FILE"
+      (cd "$GT_MOD_DIR" && go install ./cmd/gt)
+    fi
+  fi
+
   # HACK: beads v0.55.4 ephemeral transaction routing bug.
   # doltTransaction.CreateIssue and AddDependency write directly to Dolt SQL,
   # bypassing the ephemeral SQLite routing that DoltStore.CreateIssue uses.
